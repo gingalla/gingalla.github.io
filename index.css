@@ -62,3 +62,35 @@ ul.topnav li.right {float: right;}
   #intro-text {font-size: 14px;}
   #headshot {height: 300px;}
 }
+
+.card {
+  border: 1px solid #ddd;
+  padding: 20px;
+  margin: 15px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.card img {
+  width: 250px;
+}
+
+.card a {
+  font-size: 25px;
+  color:#333;
+  font-weight: 100;
+}
+
+/* Only generate underline to indicate link if project has its own page */
+.card a.link_present{
+  text-decoration: underline;
+}
+
+.card a.link_null {
+  text-decoration: none;
+  cursor: not-allowed;
+}
+
