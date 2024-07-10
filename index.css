@@ -58,15 +58,6 @@ ul.topnav li.right {float: right;}
   ul.topnav li.right, 
   ul.topnav li {float: none;}
 
-  #intro {font-size: 20px; margin: 25px 10px 25px 0;}
-  #intro-text {font-size: 14px; margin: 0;}
-  #headshot {height: 300px; margin: 10px 10px 0 0;}
-}
-
-@media screen and (max-width: 590px) {
-  ul.topnav li.right, 
-  ul.topnav li {float: none;}
-
   #intro {font-size: 20px; margin: 100px 0 0 0;}
   #intro-text {font-size: 12px;}
   #headshot {height: 200px; margin: 100px 0 0 0;}
