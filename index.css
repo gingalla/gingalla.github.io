@@ -58,9 +58,29 @@ ul.topnav li.right {float: right;}
   ul.topnav li.right, 
   ul.topnav li {float: none;}
 
-  #intro {font-size: 20px;}
-  #intro-text {font-size: 14px;}
-  #headshot {height: 300px;}
+  #intro {font-size: 20px; margin: 25px 10px 25px 0;}
+  #intro-text {font-size: 14px; margin: 0;}
+  #headshot {height: 300px; margin: 10px 10px 0 0;}
+}
+
+@media screen and (max-width: 590px) {
+  ul.topnav li.right, 
+  ul.topnav li {float: none;}
+
+  #intro {font-size: 20px; margin: 100px 0 0 0;}
+  #intro-text {font-size: 12px;}
+  #headshot {height: 200px; margin: 100px 0 0 0;}
+
+  div.card {padding: 10px; margin: 10px}
+
+  div.card img {height: 75px;}
+
+  div.card a {font-size: 12px; padding: 5px;}
+
+  div.card p {font-size: 10px; padding: 5px;}
+
+  embed { width: 350px;}
+
 }
 
 .card {
@@ -82,6 +102,11 @@ ul.topnav li.right {float: right;}
   font-size: 25px;
   color:#333;
   font-weight: 100;
+  padding: 10px;
+}
+
+.card p {
+  padding: 10px;
 }
 
 /* Only generate underline to indicate link if project has its own page */
