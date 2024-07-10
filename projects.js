@@ -51,6 +51,22 @@ const card3 = createCard(
   "./assets/aneurysm_visualization.gif"
 );
 
+const card4 = createCard(
+  "Daycare Database Model",
+  "#",
+  "SQL database and html website to simulate a database utilized by a pet daycare.",
+  "./assets/sql_project.png"
+);
+
+const card5 = createCard(
+  "Encryption/Decryption Program",
+  "#",
+  "C++ implementation of substition, caesar, ROT13, running key, and Vigenere cipher encryption and decryption.",
+  "./assets/encryption_decryption.png"
+);
+
 cardContainer.appendChild(card1);
 cardContainer.appendChild(card2);
 cardContainer.appendChild(card3);
+cardContainer.appendChild(card4);
+cardContainer.appendChild(card5);
