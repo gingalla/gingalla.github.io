@@ -58,8 +58,8 @@ ul.topnav li.right {float: right;}
   ul.topnav li.right, 
   ul.topnav li {float: none;}
 
-  #intro {font-size: 20px; margin: 100px 0 0 0;}
-  #intro-text {font-size: 12px;}
+  #intro {font-size: 20px; margin: 100px 10px 10px 10px;}
+  #intro-text {font-size: 12px; margin: 10px;}
   #headshot {height: 200px; margin: 100px 0 0 0;}
 
   div.card {padding: 10px; margin: 10px}
