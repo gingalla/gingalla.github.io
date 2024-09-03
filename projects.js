@@ -39,7 +39,7 @@ const card1 = createCard(
 
 const card2 = createCard(
   "FreedgeTracker",
-  "#",
+  "https://github.com/kalyn-k/Freedge-Tracker",
   "Refrigerator tracker built to aid non-profit Freedge in maintaining their system of fridges.",
   "./assets/freedge_tracker_gui.png"
 );

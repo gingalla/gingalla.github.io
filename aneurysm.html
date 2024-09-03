@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Source Code</title>
+    <link rel="stylesheet" href="./index.css">
+</head>
+<body>
+    <ul class="topnav">
+        <li><a href="./index.html">Home</a></li>
+        <li><a href="./projects.html">Projects</a></li>
+        <li><a href="./aboutme.html">About Me</a></li>
+        <li><a href="./contact.html">Contact</a></li>
+      </ul>
+
+      <p>My aneurysm visualization source code:</p>
+      <p>
+        // Access my movie at: https://youtu.be/3IxmqMg00p8
+
+#include <iostream>
+#include <vtkDataSet.h>
+#include <vtkImageData.h>
+#include <vtkPNGWriter.h>
+#include <vtkPointData.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataReader.h>
+#include <vtkPoints.h>
+#include <vtkUnsignedCharArray.h>
+#include <vtkFloatArray.h>
+#include <vtkCellArray.h>
+#include <vtkDoubleArray.h>
+
+using std::cerr;
+using std::endl;
+
+#define NORMALS
+
+double ceil__(double f)
+{
+    return ceil(f-0.00001);
+}
+
+double floor__(double f)
+{
+    return floor(f+0.00001);
+}
+
+vtkImageData * 
+NewImage(int height, int width)
+{
+    vtkImageData *img = vtkImageData::New();
+    img->SetDimensions(width, height, 1);
+    img->AllocateScalars(VTK_UNSIGNED_CHAR, 3);
+
+    return img;
+}
+
+void WriteImage(vtkImageData *img, const char *filename)
+{
+   std::string full_filename = filename;
+   full_filename += ".png";
+   vtkPNGWriter *writer = vtkPNGWriter::New();
+   writer->SetInputData(img);
+   writer->SetFileName(full_filename.c_str());
+   writer->Write();
+   writer->Delete();
+}
+
+class Matrix
+{
+  public:
+    double          A[4][4];  // A[i][j] means row i, column j
+
+    void            TransformPoint(const double *ptIn, double *ptOut);
+    static Matrix   ComposeMatrices(const Matrix &, const Matrix &);
+    void            Print(ostream &o);
+};
+
+class Camera
+{
+  public:
+    double          near, far;
+    double          angle;
+    double          position[3];
+    double          focus[3];
+    double          up[3];
+
+    // Added data members
+    double          u[3];
+    double          v[3];
+    double          w[3];
+
+    Matrix          ViewTransform(void);
+    Matrix          CameraTransform(void);
+    Matrix          DeviceTransform(void);
+
+    // Added helper functions
+    void            CalculateCameraFrame(void);
+    void            normalizeVectors(void);
+};
+
+struct LightingParameters
+{
+    LightingParameters(void)
+    {
+         lightDir[0] = -0.6;
+         lightDir[1] = 0;
+         lightDir[2] = -0.8;
+         Ka = 0.3;
+         Kd = 0.7;
+         Ks = 2.8;
+         alpha = 50.5;
+    };
+
+
+    double lightDir[3]; // The direction of the light source
+    double Ka;          // The coefficient for ambient lighting
+    double Kd;          // The coefficient for diffuse lighting
+    double Ks;          // The coefficient for specular lighting
+    double alpha;       // The exponent term for specular lighting
+};
+
+LightingParameters lp;
+
+LightingParameters
+GetLighting(Camera c)
+{
+    LightingParameters lp;
+    lp.lightDir[0] = c.position[0]-c.focus[0];
+    lp.lightDir[1] = c.position[1]-c.focus[1];
+    lp.lightDir[2] = c.position[2]-c.focus[2];
+    double mag = sqrt(lp.lightDir[0]*lp.lightDir[0]
+                    + lp.lightDir[1]*lp.lightDir[1]
+                    + lp.lightDir[2]*lp.lightDir[2]);
+    if (mag > 0)
+    {
+        lp.lightDir[0] /= mag;
+        lp.lightDir[1] /= mag;
+        lp.lightDir[2] /= mag;
+    }
+
+    return lp;
+}
+
+class Screen
+{
+  public:
+      unsigned char   *buffer;
+      float           *depthBuffer;
+      int width, height;
+
+      /* Added Screen methods */
+      void imageColor(int row, int c, double r, double g, double b, double s);
+};
+
+
+class Triangle
+{
+  public:
+      double         X[3];
+      double         Y[3];
+      double         Z[3];
+      double         colors[3][3];
+      double         normals[3][3];
+      double         shade[3];
+
+      /* Added Triangle methods */
+
+      // Methods to rasterize Triangle
+      void rasterizeArbitrary(Screen &screen);
+      void rasterizeGoingRight(Screen &screen);
+      void rasterizeGoingLeft(Screen &screen);
+
+      // Method to interpolate using x values (horizontal)
+      void interpolate(int v1, int v2, double x, double &red, double &green, double &blue, double &z, double &shading); 
+
+      // Methods to find which vertex is which
+      void findVertices(int &left, int &mid, int &right);
+      void findRightVertices(int &right, int &topl, int &bottoml);
+      void findLeftVertices(int &left, int &topr, int &bottomr);
+ 
+      // Methods to determine if triangle is already a right or left triangle     
+      int isRightTri(int v1, int v2, int v3);
+      int isLeftTri(int v1, int v2, int v3);
+
+      // Currently fake method;
+      double CalculateShading(Camera c, LightingParameters lp, int i);
+ 
+      // Method to find y-intercepts
+      double slope(int v1, int v2, double x);   
+
+      // Method to print Triangle data
+      void printTriData();
+};
+
+void Camera::CalculateCameraFrame(void) {
+    for (int i = 0; i < 3; i++) {
+        w[i] = position[i] - focus[i];
+        v[i] = up[i];
+    }
+
+    u[0] = (up[1] * w[2]) - (up[2] * w[1]);
+    u[1] = (w[0] * up[2]) - (w[0] * up[2]);
+    u[2] = (up[0] * w[1]) - (up[1] * w[0]);
+
+    v[0] = (w[1] * u[2]) - (w[2] * u[1]);
+    v[1] = (u[0] * w[2]) - (w[0] * u[2]);
+    v[2] = (w[0] * u[1]) - (w[1] * u[0]);
+
+    normalizeVectors();
+
+}
+
+void Camera::normalizeVectors(void) {
+    double u_len, v_len, w_len;
+
+    u_len = sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    v_len = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    w_len = sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+
+    for (int i = 0; i < 3; i++) {
+        u[i] = u[i] / u_len;
+        v[i] = v[i] / v_len;
+        w[i] = w[i] / w_len;    
+    }
+}
+
+Matrix Camera::ViewTransform(void){
+    Matrix VT;
+
+    // Initialize array to be all zeros 
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            VT.A[i][j] = 0;
+        }
+    }
+
+    VT.A[0][0] = 1 / (tan(angle/2));
+    VT.A[1][1] = 1 / (tan(angle/2));
+    VT.A[2][2] = (far + near) / (far - near);
+    VT.A[2][3] = -1;
+    VT.A[3][2] = (2 * far * near) / (far - near);
+
+    return VT;
+}
+
+Matrix Camera::CameraTransform(void){
+    Matrix CT;
+    double t[3];
+
+    int elem = 0;
+    for (int i = 0; i < 3; i++) {
+        CT.A[i][0] = u[elem];
+        CT.A[i][1] = v[elem];
+        CT.A[i][2] = w[elem];
+        CT.A[i][3] = 0;
+        elem++;
+    }
+
+    // t = (0,0,0) - O
+    for (int i = 0; i < 3; i++) {
+        t[i] = 0 - position[i];
+    }    
+
+    // Uses dot product to fill array indeces
+    CT.A[3][0] = u[0] * t[0] + u[1] * t[1] + u[2] * t[2];
+    CT.A[3][1] = v[0] * t[0] + v[1] * t[1] + v[2] * t[2];
+    CT.A[3][2] = w[0] * t[0] + w[1] * t[1] + w[2] * t[2];
+    CT.A[3][3] = 1;
+ 
+    return CT;
+}
+
+Matrix Camera::DeviceTransform(void){
+    Matrix DT;
+
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            DT.A[i][j] = 0;
+        }
+    }
+    
+    DT.A[0][0] = 500;  // n/2
+    DT.A[1][1] = 500;  // m/2
+    DT.A[2][2] = 1;
+    DT.A[3][0] = 500;  // n/2
+    DT.A[3][1] = 500;  // m/2
+    DT.A[3][3] = 1;
+
+    return DT;
+}
+
+double SineParameterize(int curFrame, int nFrames, int ramp)
+{
+    int nNonRamp = nFrames-2*ramp;
+    double height = 1./(nNonRamp + 4*ramp/M_PI);
+    if (curFrame < ramp)
+    {
+        double factor = 2*height*ramp/M_PI;
+        double eval = cos(M_PI/2*((double)curFrame)/ramp);
+        return (1.-eval)*factor;
+    }
+    else if (curFrame > nFrames-ramp)
+    {
+        int amount_left = nFrames-curFrame;
+        double factor = 2*height*ramp/M_PI;
+        double eval =cos(M_PI/2*((double)amount_left/ramp));
+        return 1. - (1-eval)*factor;
+    }
+    double amount_in_quad = ((double)curFrame-ramp);
+    double quad_part = amount_in_quad*height;
+    double curve_part = height*(2*ramp)/M_PI;
+    return quad_part+curve_part;
+}
+
+Camera GetCamera(int frame, int nframes)
+{
+    double t = SineParameterize(frame, nframes, nframes/10);
+    Camera c;
+    c.near = 5;
+    c.far = 200;
+    c.angle = M_PI/6;
+    c.position[0] = 40*sin(2*M_PI*t);
+    c.position[1] = 40*cos(2*M_PI*t);
+    c.position[2] = 40;
+    c.focus[0] = 0;
+    c.focus[1] = 0;
+    c.focus[2] = 0;
+    c.up[0] = 0;
+    c.up[1] = 1;
+    c.up[2] = 0;
+    return c;
+}
+
+void Matrix::Print(ostream &o)
+{
+    for (int i = 0 ; i < 4 ; i++)
+    {
+        char str[256];
+        sprintf(str, "(%.7f %.7f %.7f %.7f)\n", A[i][0], A[i][1], A[i][2], A[i][3]);
+        o << str;
+    }
+}
+
+Matrix Matrix::ComposeMatrices(const Matrix &M1, const Matrix &M2)
+{
+    Matrix rv;
+    for (int i = 0 ; i < 4 ; i++)
+        for (int j = 0 ; j < 4 ; j++)
+        {
+            rv.A[i][j] = 0;
+            for (int k = 0 ; k < 4 ; k++)
+                rv.A[i][j] += M1.A[i][k]*M2.A[k][j];
+        }
+
+    return rv;
+}
+
+void Matrix::TransformPoint(const double *ptIn, double *ptOut)
+{
+    ptOut[0] = ptIn[0]*A[0][0]
+             + ptIn[1]*A[1][0]
+             + ptIn[2]*A[2][0]
+             + ptIn[3]*A[3][0];
+    ptOut[1] = ptIn[0]*A[0][1]
+             + ptIn[1]*A[1][1]
+             + ptIn[2]*A[2][1]
+             + ptIn[3]*A[3][1];
+    ptOut[2] = ptIn[0]*A[0][2]
+             + ptIn[1]*A[1][2]
+             + ptIn[2]*A[2][2]
+             + ptIn[3]*A[3][2];
+    ptOut[3] = ptIn[0]*A[0][3]
+             + ptIn[1]*A[1][3]
+             + ptIn[2]*A[2][3]
+             + ptIn[3]*A[3][3];
+}
+
+void Screen::imageColor(int row, int c, double r, double g, double b, double s) {
+      int index = (row * width + c) * 3;
+
+      unsigned char red, green, blue;
+  
+      red = (unsigned char)ceil__(255 * (fmin(1, (r * s))));
+      green = (unsigned char)ceil__(255 * (fmin(1, (g * s))));
+      blue = (unsigned char)ceil__(255 * (fmin(1, (b * s))));
+
+      buffer[index] = red;
+      buffer[index+1] = green;
+      buffer[index+2] = blue;
+}
+
+double Triangle::CalculateShading(Camera c, LightingParameters lp, int i) {
+    double viewDir[3];
+      
+    // normalize viewDir
+    viewDir[0] = c.position[0] - X[i];
+    viewDir[1] = c.position[1] - Y[i];
+    viewDir[2] = c.position[2] - Z[i];
+
+    double mag = sqrt(viewDir[0]*viewDir[0]
+                    + viewDir[1]*viewDir[1]
+                    + viewDir[2]*viewDir[2]);
+     viewDir[0] /= mag;
+     viewDir[1] /= mag;
+     viewDir[2] /= mag;
+
+    double nor = sqrt(normals[i][0]*normals[i][0]
+                    + normals[i][1]*normals[i][1]
+                    + normals[i][2]*normals[i][2]);
+    normals[i][0] /= nor;
+    normals[i][1] /= nor;
+    normals[i][2] /= nor;
+
+
+    double diffuse, dotLN;
+    double specular, dotVR;
+
+    // L dot N
+    dotLN = lp.lightDir[0] * normals[i][0] + lp.lightDir[1] * normals[i][1] + lp.lightDir[2] * normals[i][2];
+
+    diffuse = fmax(0, dotLN);
+
+    // V dot R
+    double R[3];
+    R[0] = 2*dotLN*normals[i][0] - lp.lightDir[0];
+    R[1] = 2*dotLN*normals[i][1] - lp.lightDir[1];
+    R[2] = 2*dotLN*normals[i][2] - lp.lightDir[2];
+
+    dotVR = viewDir[0]*R[0] + viewDir[1]*R[1] + viewDir[2]*R[2];    
+    specular = fmax(0, dotVR);
+
+    double phong;
+    phong = lp.Ks * pow(specular, lp.alpha) + lp.Kd*diffuse + lp.Ka;
+    return phong;
+}
+
+void Triangle::rasterizeArbitrary(Screen &screen)
+{
+   Triangle leftTriangle, rightTriangle;
+
+   // Split functionality
+   int left_v, mid_v, right_v;
+   findVertices(left_v, mid_v, right_v);
+
+   int is_right, is_left;
+   is_right = isRightTri(left_v, mid_v, right_v);
+   is_left = isLeftTri(left_v, mid_v, right_v);
+
+   if (is_right) 
+      rasterizeGoingRight(screen);
+
+   else if (is_left) 
+      rasterizeGoingLeft(screen);
+
+   else {
+      double mid_yval = slope(left_v, right_v, X[mid_v]);
+      
+      // Set data for left Triangle
+      leftTriangle.X[0] = X[left_v];
+      leftTriangle.Y[0] = Y[left_v];
+      leftTriangle.Z[0] = Z[left_v];
+      leftTriangle.X[1] = X[mid_v];
+      leftTriangle.Y[1] = Y[mid_v];
+      leftTriangle.Z[1] = Z[mid_v];
+      leftTriangle.X[2] = X[mid_v];
+      leftTriangle.Y[2] = mid_yval;
+      leftTriangle.colors[0][0] = colors[left_v][0];
+      leftTriangle.colors[0][1] = colors[left_v][1];
+      leftTriangle.colors[0][2] = colors[left_v][2];
+      leftTriangle.colors[1][0] = colors[mid_v][0];
+      leftTriangle.colors[1][1] = colors[mid_v][1];
+      leftTriangle.colors[1][2] = colors[mid_v][2];
+      leftTriangle.shade[0] = shade[left_v];
+      leftTriangle.shade[1] = shade[mid_v];
+
+
+      // Set data for right Triangle
+      rightTriangle.X[0] = X[right_v];
+      rightTriangle.Y[0] = Y[right_v];
+      rightTriangle.Z[0] = Z[right_v];
+      rightTriangle.X[1] = X[mid_v];
+      rightTriangle.Y[1] = Y[mid_v];
+      rightTriangle.Z[1] = Z[mid_v];
+      rightTriangle.X[2] = X[mid_v];
+      rightTriangle.Y[2] = mid_yval;
+      rightTriangle.colors[0][0] = colors[right_v][0];
+      rightTriangle.colors[0][1] = colors[right_v][1];
+      rightTriangle.colors[0][2] = colors[right_v][2];
+      rightTriangle.colors[1][0] = colors[mid_v][0];
+      rightTriangle.colors[1][1] = colors[mid_v][1];
+      rightTriangle.colors[1][2] = colors[mid_v][2];
+      rightTriangle.shade[0] = shade[right_v];
+      rightTriangle.shade[1] = shade[mid_v];   
+
+
+      // interpolate to fill in colors and final Z value
+      double r, g, b, z, s;
+      interpolate(left_v, right_v, X[mid_v], r, g, b, z, s);
+
+      rightTriangle.colors[2][0] = r;
+      rightTriangle.colors[2][1] = g;
+      rightTriangle.colors[2][2] = b;
+      rightTriangle.Z[2] = z;
+      rightTriangle.shade[2] = s;
+
+      leftTriangle.colors[2][0] = r;
+      leftTriangle.colors[2][1] = g;
+      leftTriangle.colors[2][2] = b;
+      leftTriangle.Z[2] = z;
+      leftTriangle.shade[2] = s;
+
+      leftTriangle.rasterizeGoingLeft(screen);
+
+      rightTriangle.rasterizeGoingRight(screen);
+   }
+}
+
+void Triangle::rasterizeGoingRight(Screen &screen) {
+   int right, bottoml, topl;
+   findRightVertices(right, topl, bottoml);
+
+   double columnMin = ceil__(X[bottoml]);
+   double columnMax = floor__(X[right]);
+
+   // Keep pixels on screen
+   if (columnMax >= screen.width)
+      columnMax = screen.width - 1;
+   if (columnMin < 0)
+      columnMin = 0;
+   
+   // Scanline
+   for (int c = columnMin; c <= columnMax; c++) {
+      int right, bottoml, topl;
+      findRightVertices(right, topl, bottoml);
+
+      double bottomEnd = slope(bottoml, right, c);
+      double topEnd = slope(topl, right, c);
+
+      // interpolate color channels for bottomEnd
+      double bR, bG, bB, bZ, bS;
+      interpolate(right, bottoml, c, bR, bG, bB, bZ, bS);
+
+      // interpolate color channels for topEnd
+      double tR, tG, tB, tZ, tS;
+      interpolate(right, topl, c, tR, tG, tB, tZ, tS);
+
+      // Only color pixel if it is inside the screen
+      for (int r = ceil__(bottomEnd); r <= floor__(topEnd); r++) {
+         if ((r < screen.height) && (r >= 0)) {
+            
+            // Calculating Color(r, c) by interpolating vertical scanline
+            double t = (r - bottomEnd) / (topEnd - bottomEnd);
+            double rR, rG, rB, rZ, rS;
+
+            rR = bR + t * (tR - bR);
+            rG = bG + t * (tG - bG);
+            rB = bB + t * (tB - bB);
+            rZ = bZ + t * (tZ - bZ);
+            rS = bS + t * (tS - bS);
+
+            int index = r * screen.width + c;
+            if (rZ > screen.depthBuffer[index]) {
+               screen.imageColor(r, c, rR, rG, rB, rS);
+               screen.depthBuffer[index] = rZ;
+            }
+         }
+      }
+   }
+}
+
+void Triangle::rasterizeGoingLeft(Screen &screen) {
+   int left, topr, bottomr;
+   findLeftVertices(left, topr, bottomr);
+    
+   double columnMin = ceil__(X[left]);
+   double columnMax = floor__(X[bottomr]);
+
+   // Keep pixels on screen
+   if (columnMax >= screen.width)
+      columnMax = screen.width - 1;
+   if (columnMin < 0)
+      columnMin = 0;
+ 
+   // Scanline
+   for (int c = columnMin; c <= columnMax; c++) {
+      int left, topr, bottomr;
+      findLeftVertices(left, topr, bottomr);
+
+      double bottomEnd = slope(left, bottomr, c);
+      double topEnd = slope(left, topr, c);
+
+      // interpolate color channels for bottomEnd
+      double bR, bG, bB, bZ, bS;
+      interpolate(left, bottomr, c, bR, bG, bB, bZ, bS);
+
+      // interpolate color channels for topEnd
+      double tR, tG, tB, tZ, tS;
+      interpolate(left, topr, c, tR, tG, tB, tZ, tS);
+
+      // Only color pixel if it is inside the screen
+      for (int r = ceil__(bottomEnd); r <= floor__(topEnd); r++) {
+         if ((r < screen.height) && (r >= 0)) {
+            
+            // Calculating Color(r, c) by interpolating vertical scanline;
+            double t = (r - bottomEnd) / (topEnd - bottomEnd);
+            double rR, rG, rB, rZ, rS;
+
+            rR = bR + t * (tR - bR);
+            rG = bG + t * (tG - bG);
+            rB = bB + t * (tB - bB);
+            rZ = bZ + t * (tZ - bZ);
+            rS = bS + t * (tS - bS);
+
+            int index = r * screen.width + c;
+            if (rZ > screen.depthBuffer[index]) {
+               screen.imageColor(r, c, rR, rG, rB, rS);
+               screen.depthBuffer[index] = rZ;
+            }
+         }
+      }
+   }
+}
+
+
+void Triangle::interpolate(int v1, int v2, double x, double &red, double &green, double &blue, double &z, double &shading)
+{  
+   double t;
+   int A, B;
+
+   if (X[v1] < X[v2]) {
+      A = v1;
+      B = v2;
+   }
+   else {
+      A = v2;
+      B = v1;
+   }
+
+   t = ((x - X[A]) / (X[B] - X[A]));
+   red = colors[A][0] + t * (colors[B][0] - colors[A][0]);
+   green = colors[A][1] + t * (colors[B][1] - colors[A][1]);
+   blue = colors[A][2] + t * (colors[B][2] - colors[A][2]);
+   z = Z[A] + t * (Z[B] - Z[A]);
+   shading = shade[A] + t * (shade[B] - shade[A]);
+}
+
+void Triangle::printTriData() {
+   for (int i = 0; i < 3; i++)
+      cout << "(" << X[i] << ", " << Y[i] << ", " << Z[i] << ") , color = (" << (colors[i][0]) << ", " << (colors[i][1]) << ", " << (colors[i][2]) << ")" << endl;
+}
+
+void Triangle::findVertices(int &left, int &mid, int &right) {
+   int l, m, r;
+   if ((X[0] < X[1]) && (X[0] < X[2])) {
+      l = 0;
+      if (X[1] < X[2]) {
+         m = 1;
+         r = 2;
+      }
+      else {
+         m = 2;
+         r = 1;
+      }
+   }
+   
+   else if ((X[1] < X[0]) && (X[1] < X[2])) {
+      l = 1;
+      if (X[0] < X[2]) {
+         m = 0;
+         r = 2;
+      }
+      else {
+         m = 2;
+         r = 0;
+      }
+   }
+  
+   else {
+      l = 2;
+      if (X[1] < X[0]) {
+         m = 1;
+         r = 0;
+      }
+      else {
+         m = 0;
+         r = 1;
+      }
+   }
+   right = r;
+   mid = m;
+   left = l;
+}
+
+void Triangle::findRightVertices(int &right, int &topl, int &bottoml) {
+   int r_vert, tl_vert, bl_vert;
+
+   if ((X[0] >= X[1]) && (X[0] >= X[2]))
+      r_vert = 0;
+   else if ((X[1] > X[0]) && (X[1] > X[2]))
+      r_vert = 1;
+   else
+      r_vert = 2;
+
+   if (X[0] == X[1]) {
+      if (Y[0] > Y[1]) {
+         tl_vert = 0;
+         bl_vert = 1;
+      }
+      else {
+         tl_vert = 1;
+         bl_vert = 0;
+      }
+   }
+   else if (X[0] == X[2]) {
+      if (Y[0] > Y[2]){
+         tl_vert = 0;
+         bl_vert = 2;
+      }
+      else {
+         tl_vert = 2;
+         bl_vert = 0;
+      }
+   }
+   else {
+      if (Y[1] > Y[2]){
+         tl_vert = 1;
+         bl_vert = 2;
+      }
+      else {
+         tl_vert = 2;
+         bl_vert = 1;
+      }
+   }
+   right = r_vert;
+   topl = tl_vert;
+   bottoml = bl_vert;
+}
+
+void Triangle::findLeftVertices(int &left, int &topr, int &bottomr) {
+   int l_vert, tr_vert, br_vert;
+
+   if ((X[0] <= X[1]) && (X[0] <= X[2]))
+      l_vert = 0;
+   else if ((X[1] < X[0]) && (X[1] < X[2]))
+      l_vert = 1;
+   else
+      l_vert = 2;
+
+   if (X[0] == X[1]) {
+      if (Y[0] > Y[1]) {
+         tr_vert = 0;
+         br_vert = 1;
+      }
+      else {
+         tr_vert = 1;
+         br_vert = 0;
+      }
+   }
+   else if (X[0] == X[2]) {
+      if (Y[0] > Y[2]){
+         tr_vert = 0;
+         br_vert = 2;
+      }
+      else {
+         tr_vert = 2;
+         br_vert = 0;
+      }
+   }
+   else {
+      if (Y[1] > Y[2]){
+         tr_vert = 1;
+         br_vert = 2;
+      }
+      else {
+         tr_vert = 2;
+         br_vert = 1;
+      }
+   }
+   left = l_vert;
+   topr = tr_vert;
+   bottomr = br_vert;
+}
+
+int Triangle::isRightTri(int v1, int v2, int v3) {
+   if ((X[v1] == X[v2]) && (X[v1] < X[v3]))   
+      return 1;
+   else if ((X[v1] == X[v3]) && (X[v1] < X[v2]))
+      return 1;
+   else if ((X[v2] == X[v3]) && (X[v2] < X[v1]))
+      return 1;
+   return 0;
+}
+
+int Triangle::isLeftTri(int v1, int v2, int v3) {
+   if ((X[v1] == X[v2]) && (X[v1] > X[v3]))
+      return 1;
+   else if ((X[v1] == X[v3]) && (X[v1] > X[v2]))
+      return 1;
+   else if ((X[v2] == X[v3]) && (X[v2] > X[v1]))
+      return 1;
+   return 0;
+}
+
+double Triangle::slope(int v1, int v2, double x) {
+      double m = ((Y[v2] - Y[v1]) / (X[v2] - X[v1]));
+      double b = Y[v1] - X[v1] * m;
+      double y = (m * x) + b;
+      return y;
+   }
+
+/* 1F GetTriangle() */
+std::vector<Triangle>
+GetTriangles(void)
+{
+    vtkPolyDataReader *rdr = vtkPolyDataReader::New();
+    rdr->SetFileName("proj1f_geometry.vtk");
+    cerr << "Reading" << endl;
+    rdr->Update();
+    cerr << "Done reading" << endl;
+    if (rdr->GetOutput()->GetNumberOfCells() == 0)
+    {
+        cerr << "Unable to open file!!" << endl;
+        exit(EXIT_FAILURE);
+    }
+    vtkPolyData *pd = rdr->GetOutput();
+
+    int numTris = pd->GetNumberOfCells();
+    vtkPoints *pts = pd->GetPoints();
+    vtkCellArray *cells = pd->GetPolys();
+    vtkDoubleArray *var = (vtkDoubleArray *) pd->GetPointData()->GetArray("hardyglobal");
+    double *color_ptr = var->GetPointer(0);
+    //vtkFloatArray *var = (vtkFloatArray *) pd->GetPointData()->GetArray("hardyglobal");
+    //float *color_ptr = var->GetPointer(0);
+    vtkFloatArray *n = (vtkFloatArray *) pd->GetPointData()->GetNormals();
+    float *normals = n->GetPointer(0);
+    std::vector<Triangle> tris(numTris);
+    vtkIdType npts;
+    vtkIdType *ptIds;
+    int idx;
+    for (idx = 0, cells->InitTraversal() ; cells->GetNextCell(npts, ptIds) ; idx++)
+    {
+        if (npts != 3)
+        {
+            cerr << "Non-triangles!! ???" << endl;
+            exit(EXIT_FAILURE);
+        }
+        double *pt = NULL;
+        pt = pts->GetPoint(ptIds[0]);
+        tris[idx].X[0] = pt[0];
+        tris[idx].Y[0] = pt[1];
+        tris[idx].Z[0] = pt[2];
+#ifdef NORMALS
+        tris[idx].normals[0][0] = normals[3*ptIds[0]+0];
+        tris[idx].normals[0][1] = normals[3*ptIds[0]+1];
+        tris[idx].normals[0][2] = normals[3*ptIds[0]+2];
+#endif
+        pt = pts->GetPoint(ptIds[1]);
+        tris[idx].X[1] = pt[0];
+        tris[idx].Y[1] = pt[1];
+        tris[idx].Z[1] = pt[2];
+#ifdef NORMALS
+        tris[idx].normals[1][0] = normals[3*ptIds[1]+0];
+        tris[idx].normals[1][1] = normals[3*ptIds[1]+1];
+        tris[idx].normals[1][2] = normals[3*ptIds[1]+2];
+#endif
+        pt = pts->GetPoint(ptIds[2]);
+        tris[idx].X[2] = pt[0];
+        tris[idx].Y[2] = pt[1];
+        tris[idx].Z[2] = pt[2];
+#ifdef NORMALS
+        tris[idx].normals[2][0] = normals[3*ptIds[2]+0];
+        tris[idx].normals[2][1] = normals[3*ptIds[2]+1];
+        tris[idx].normals[2][2] = normals[3*ptIds[2]+2];
+#endif
+
+        // 1->2 interpolate between light blue, dark blue
+        // 2->2.5 interpolate between dark blue, cyan
+        // 2.5->3 interpolate between cyan, green
+        // 3->3.5 interpolate between green, yellow
+        // 3.5->4 interpolate between yellow, orange
+        // 4->5 interpolate between orange, brick
+        // 5->6 interpolate between brick, salmon
+        double mins[7] = { 1, 2, 2.5, 3, 3.5, 4, 5 };
+        double maxs[7] = { 2, 2.5, 3, 3.5, 4, 5, 6 };
+        unsigned char RGB[8][3] = { { 71, 71, 219 }, 
+                                    { 0, 0, 91 },
+                                    { 0, 255, 255 },
+                                    { 0, 128, 0 },
+                                    { 255, 255, 0 },
+                                    { 255, 96, 0 },
+                                    { 107, 0, 0 },
+                                    { 224, 76, 76 } 
+                                  };
+        for (int j = 0 ; j < 3 ; j++)
+        {
+            float val = color_ptr[ptIds[j]];
+            int r;
+            for (r = 0 ; r < 7 ; r++)
+            {
+                if (mins[r] <= val && val < maxs[r])
+                    break;
+            }
+            if (r == 7)
+            {
+                cerr << "Could not interpolate color for " << val << endl;
+                exit(EXIT_FAILURE);
+            }
+            double proportion = (val-mins[r]) / (maxs[r]-mins[r]);
+            tris[idx].colors[j][0] = (RGB[r][0]+proportion*(RGB[r+1][0]-RGB[r][0]))/255.0;
+            tris[idx].colors[j][1] = (RGB[r][1]+proportion*(RGB[r+1][1]-RGB[r][1]))/255.0;
+            tris[idx].colors[j][2] = (RGB[r][2]+proportion*(RGB[r+1][2]-RGB[r][2]))/255.0;
+        }
+    }
+
+    return tris;
+}
+
+
+int main()
+{  
+    cout << "Enter Main()" << endl;
+    vtkImageData *image = NewImage(1000, 1000);
+    unsigned char *buffer = 
+      (unsigned char *) image->GetScalarPointer(0,0,0);
+    int npixels = 1000*1000;
+
+    // Create buffer to hold depth values and initialize to -1
+    float *depthBuffer = (float *)malloc(sizeof(float) * npixels);
+
+    std::vector<Triangle> triangles = GetTriangles();
+   
+    Screen screen;
+    screen.buffer = buffer;
+    screen.width = 1000;
+    screen.height = 1000;
+    screen.depthBuffer = depthBuffer;
+
+    Matrix M, CT, VT, DT;
+    for (int i = 0; i < 1; i++) {
+        for (int i = 0 ; i < npixels*3; i++)
+            buffer[i] = 0;
+
+        for (int i = 0; i < npixels; i++)
+            depthBuffer[i] = -1;
+
+        Camera c = GetCamera(i, 1000);
+        c.CalculateCameraFrame();
+
+        LightingParameters lp;
+        lp = GetLighting(c);
+ 
+        CT = c.CameraTransform();
+        VT = c.ViewTransform();
+        DT = c.DeviceTransform();
+
+        M = CT.ComposeMatrices(CT, VT);
+        M = M.ComposeMatrices(M, DT);
+
+        int size = triangles.size();
+        for (int i = 0; i < size; i++) {
+            Triangle T = triangles[i];
+	    double inPoint[4], outPoint[4];
+       
+            T.shade[0] = T.CalculateShading(c, lp, 0);
+            T.shade[1] = T.CalculateShading(c, lp, 1);
+            T.shade[2] = T.CalculateShading(c, lp, 2);
+
+            // Update vertex values based on matrix
+            for (int k = 0; k < 3; k++) {
+                inPoint[0] = T.X[k];
+                inPoint[1] = T.Y[k];
+                inPoint[2] = T.Z[k];
+                inPoint[3] = 1;
+        
+                M.TransformPoint(inPoint, outPoint);
+            
+                T.X[k] = outPoint[0] / outPoint[3];
+                T.Y[k] = outPoint[1] / outPoint[3];
+                T.Z[k] = outPoint[2] / outPoint[3];
+            
+            }
+
+            T.rasterizeArbitrary(screen);
+        }
+        char frame[32];
+        sprintf(frame, "frame%03d", i); 
+        
+        WriteImage(image, frame);
+    }
+   
+   // Free malloced depthBuffer
+   free(depthBuffer);
+}
+
+      </p>
+</body>
+</html>

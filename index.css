@@ -1,5 +1,5 @@
 body {
-  background-color: #c3c3c3;
+  background-color: #dedede;
   font-family: Verdana, Geneva, Tahoma, sans-serif;
   color:#333;
 }
@@ -75,6 +75,7 @@ ul.topnav li.right {float: right;}
 }
 
 .card {
+  background-color: #b7b5b5;
   border: 1px solid #ddd;
   padding: 20px;
   margin: 15px;
@@ -95,6 +96,8 @@ ul.topnav li.right {float: right;}
   font-weight: 100;
   padding: 10px;
 }
+
+.card:hover {background-color: #929191;}
 
 .card p {
   padding: 10px;
